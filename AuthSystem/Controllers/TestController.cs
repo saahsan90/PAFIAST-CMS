@@ -5,16 +5,13 @@ using DCMS;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
-using NuGet.Versioning;
-using System.Reflection.Metadata.Ecma335;
 using System.Security.Cryptography;
-
 namespace AuthSystem.Controllers
 {
     public class TestController : Controller
     {
-
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly AuthDbContext _test;
         [ActivatorUtilitiesConstructor]
@@ -28,17 +25,18 @@ namespace AuthSystem.Controllers
         [HttpGet]
         public IActionResult Test()
         {
+            ViewBag.TestCenters = new SelectList(_test.TestCenters, "Id", "TestCenterName");
             var viewModel = new Test
             {
                 TestList = _test.Tests.OrderByDescending(q => q.Id).ToList(),
                 Subjects = _test.Subjects.Include(td => td.Subjects).ToList(),
                 TestDetails = _test.TestsDetail.Include(td => td.Test).ToList(),
-                TestCalenders = _test.TestCalenders.Include(td => td.Test).ToList(),
+                TestCalenders = _test.TestCalenders.Include(td => td.Test).Include(td => td.TestCenter).ToList()
             };
-
 
             return View(viewModel);
         }
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(string testName, int[] selectedSubjectIds, Dictionary<int, int> percentages, int duration, int timeSpan)
@@ -95,17 +93,17 @@ namespace AuthSystem.Controllers
                 return RedirectToAction("Test");
             }
 
-            
+
 
             return RedirectToAction("Test");
         }
         [HttpPost]
-        public IActionResult CreateCalendar(int testId , DateOnly date , TimeOnly startTime)
+        public IActionResult CreateCalendar(int testId, DateOnly date, TimeOnly startTime, int centerId)
         {
             try
 
             {
-                 var test =  _test.Tests.Where(q => q.Id == testId).FirstOrDefault();
+                var test = _test.Tests.Where(q => q.Id == testId).FirstOrDefault();
                 var calendarToken = RandomNumberGenerator.Create();
                 byte[] randomBytes = new byte[16];
                 calendarToken.GetBytes(randomBytes);
@@ -118,11 +116,12 @@ namespace AuthSystem.Controllers
                     Date = date,
                     StartTime = startTime,
                     EndTime = startTime.AddMinutes(test.TimeSpan),
+                    TestCenterId = centerId,
                     CalendarToken = token
 
                 };
 
-                    _test.TestCalenders.Add(calendar);
+                _test.TestCalenders.Add(calendar);
 
                 _test.SaveChanges();
 
@@ -140,12 +139,12 @@ namespace AuthSystem.Controllers
                 var test = _test.Tests.SingleOrDefault(q => q.Id == testId);
                 if (test == null)
                 {
-                    return NotFound(); // Return a 404 Not Found response if the test is not found
+                    return NotFound();
                 }
 
                 if (startTime == null)
                 {
-                    return BadRequest("Invalid start time"); // Return a 400 Bad Request response if the start time is not provided
+                    return BadRequest("Invalid start time"); 
                 }
 
                 var testEndTime = startTime.AddMinutes(test.TimeSpan);
@@ -153,7 +152,7 @@ namespace AuthSystem.Controllers
             }
             catch (Exception e)
             {
-                return StatusCode(500, e.Message); // Return a 500 Internal Server Error response with the exception message
+                return StatusCode(500, e.Message); 
             }
         }
 
@@ -179,9 +178,10 @@ namespace AuthSystem.Controllers
 
             var user = await _userManager.GetUserAsync(User);
 
-            if (user == null) {
-                return Content("User not found"); 
-               
+            if (user == null)
+            {
+                return Content("User not found");
+
             }
             var userId = user.Id;
 
@@ -230,7 +230,7 @@ namespace AuthSystem.Controllers
                     _test.AssignedQuestions.Add(assignedQuestion);
                 }
 
-                await _test.SaveChangesAsync(); 
+                await _test.SaveChangesAsync();
 
                 questionsList = totalQuestions;
             }
@@ -295,7 +295,7 @@ namespace AuthSystem.Controllers
 
                 var question = _test.AssignedQuestions.Where(u => u.QuestionId == questionId && u.UserId == userId && u.TestDetailId == testId).FirstOrDefault();
                 {
-                   
+
 
 
                     question.UserResponse = selectedAnswer;
@@ -345,7 +345,7 @@ namespace AuthSystem.Controllers
             }
             return NotFound();
         }
-        public IActionResult GetTestDuration(int testId , int C_Id)
+        public IActionResult GetTestDuration(int testId, int C_Id)
         {
             var test = _test.Tests.FirstOrDefault(q => q.Id == testId);
             var testCalendar = _test.TestCalenders.FirstOrDefault(q => q.TestId == testId && q.Id == C_Id);
@@ -362,7 +362,7 @@ namespace AuthSystem.Controllers
                     var duration = test.Duration;
                     return Json(duration);
                 }
-                else if (minutesPassed < test.Duration )
+                else if (minutesPassed < test.Duration)
                 {
                     var remainingMinutes = (endTime - currentTime).TotalMinutes;
                     return Json(remainingMinutes);
@@ -379,23 +379,23 @@ namespace AuthSystem.Controllers
             var userId = user.Id;
 
             var testSession = _test.UserTestSessions.FirstOrDefault(q => q.TestId == testId && q.UserId == userId);
-                if (testSession == null)
+            if (testSession == null)
+            {
+                testSession = new UserTestSession
                 {
-                    testSession = new UserTestSession
-                    {
-                        TestId = testId,
-                        UserId = userId,
-                        StartTime = DateTime.Now,
-                    };
-                    _test.UserTestSessions.Add(testSession);
-                }
-                _test.SaveChanges();
-                return Content("Done");
-            
-          
+                    TestId = testId,
+                    UserId = userId,
+                    StartTime = DateTime.Now,
+                };
+                _test.UserTestSessions.Add(testSession);
+            }
+            _test.SaveChanges();
+            return Content("Done");
+
+
         }
 
-        public async Task<IActionResult> GetRemainingTimeAsync(int testId , int C_Id)
+        public async Task<IActionResult> GetRemainingTimeAsync(int testId, int C_Id)
         {
             var user = await _userManager.GetUserAsync(User);
 
@@ -415,7 +415,7 @@ namespace AuthSystem.Controllers
                 var remainingTime = test.Duration - minutesPassed;
                 return Json(remainingTime);
             }
-             
+
             return (Json(test.Duration));
         }
 
